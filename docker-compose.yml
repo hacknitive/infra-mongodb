@@ -1,0 +1,13 @@
+services:
+  mongodb:
+    image: "${DOCKER_IMAGE_NAME}"
+    command: mongod --port ${INSIDE_PORT}
+    volumes:
+      - ./mongodb:/data/db
+    ports:
+      - "${OUTSIDE_PORT}:${INSIDE_PORT}"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    restart: ${CONTAINER_RESTART}
