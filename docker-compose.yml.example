@@ -1,0 +1,34 @@
+# To run, create local configs from .example files, then execute:
+# docker compose --env-file .env up -d
+services:
+  mongo:
+    container_name: "${MONGO_CONTAINER_NAME}"
+    image: "${MONGO_DOCKER_IMAGE_NAME}"
+    env_file:
+      - "${ENV_FILE}"
+    environment:
+      # These are used by the entrypoint script on first run to create the root user.
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_EXTERNAL_PORT}:${MONGO_INTERNAL_PORT}"
+    restart: ${MONGO_CONTAINER_RESTART}
+    # The command tells mongod to start using the specified configuration file.
+    # All server settings (port, auth, logging) are now managed in mongod.conf.
+    command: mongod --config /etc/mongo/mongod.conf
+    volumes:
+      # Mounts the host data directory to the container's data directory.
+      - "${MONGO_DATA_PATH}:/data/db"
+      # Mounts the host logs directory to the container's log directory.
+      - "${LOG_PATH}:/var/log/mongodb"
+      # Mounts the configuration file as read-only.
+      - "${MONGO_CONFIG_FILE_PATH}:/etc/mongo/mongod.conf:ro"
+      # Mounts custom .js scripts to be run on first initialization (e.g., to create users/dbs).
+      # Scripts in this directory are executed alphabetically.
+      - "${MONGO_INIT_SCRIPTS_PATH}:/docker-entrypoint-initdb.d:ro"
+    healthcheck:
+      # The healthcheck remains the same, verifying that a connection can be made.
+      test: ${MONGO_HEALTHCHECK_TEST}
+      interval: "${MONGO_HEALTHCHECK_INTERVAL}"
+      timeout: "${MONGO_HEALTHCHECK_TIMEOUT}"
+      retries: ${MONGO_HEALTHCHECK_RETRIES}

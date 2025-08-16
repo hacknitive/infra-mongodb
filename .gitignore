@@ -2,3 +2,6 @@
 .env*
 !.env.example
 .vscode/
+docker-compose.yml
+automatic_git_status_add_commit_push.sh
+mongod.conf

@@ -1,0 +1,49 @@
+/**
+ * init-mongo.js.example
+ *
+ * This script will be executed automatically by the MongoDB entrypoint script
+ * on first container startup.
+ *
+ * To use it:
+ * 1. Copy this file to `init-mongo.js` in the same directory.
+ * 2. Customize the database name, username, and password below.
+ *
+ * This script creates a new user and a new database, which is a much more
+ * secure practice than connecting to your database as the root user.
+ */
+
+// The name of the database you want to create.
+const APP_DATABASE = 'my_app_db';
+
+// The credentials for the application user.
+// IMPORTANT: Use a strong, unique password in a real environment.
+const APP_USER = 'app_user';
+const APP_PASSWORD = 'app_user_secret_password';
+
+// --- Script starts here ---
+
+// Switch to the admin database to create the user.
+db = db.getSiblingDB('admin');
+
+// Create the application user.
+db.createUser({
+  user: APP_USER,
+  pwd: APP_PASSWORD,
+  roles: [
+    {
+      role: 'readWrite',
+      db: APP_DATABASE,
+    },
+  ],
+});
+
+// Switch to the application database.
+db = db.getSiblingDB(APP_DATABASE);
+
+// You can optionally create a collection and insert a document
+// to verify that the database is initialized correctly.
+db.createCollection('startup_log');
+db.startup_log.insertOne({
+  message: `Database ${APP_DATABASE} and user ${APP_USER} created successfully.`,
+  timestamp: new Date(),
+});
