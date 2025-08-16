@@ -1,1 +1,6 @@
-A vibrant digital art icon. A glowing red data cube, representing Redis, is securely encased within a translucent, geometric, blue Docker-style container with its whale log. Streams of light and data particles are flowing into and out of the cube. The background is a dark, deep black, making the red core pop. Tech-inspired, energetic, and modern.
+Design a modern avatar representing a "ready-to-launch" software foundation.
+ At the center is a sleek, circular launchpad or platform. 
+ The platform is glowing with neo vibrant blue and purple light. 
+ Perfectly integrated into the center of this platform are the Docker logo (the whale) and the MongoDB logo (the green leaf), 
+ presented harmoniously side-by-side. 
+ The overall feel should be clean, powerful, and signify immediate readiness. Use a vector art style with glowing effects against a dark background.
