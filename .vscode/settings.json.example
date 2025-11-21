@@ -1,0 +1,7 @@
+{
+    "files.exclude": {
+        ".idea": true
+    },
+    "workbench.editor.enablePreview": false,
+    "window.title": "${rootPath}"
+}

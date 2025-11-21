@@ -1,0 +1,31 @@
+# mongod.conf.- MongoDB Configuration Template
+storage:
+  dbPath: /data/db
+  journal:
+    commitIntervalMs: ${MONGODB_JOURNAL_COMMIT_INTERVAL_MS}
+  wiredTiger:
+    engineConfig:
+      cacheSizeGB: ${WIREDTIGER_CACHE_SIZE}
+      journalCompressor: "${MONGODB_JOURNAL_COMPRESSOR}"
+      directoryForIndexes: ${MONGODB_DIRECTORY_FOR_INDEXES}
+    collectionConfig:
+      blockCompressor: "${MONGODB_BLOCK_COMPRESSOR}"
+    indexConfig:
+      prefixCompression: ${MONGODB_PREFIX_COMPRESSION}
+
+# --- Logging Settings ---
+systemLog:
+  verbosity: ${MONGODB_LOG_VERBOSITY}
+
+# --- Network Settings ---
+net:
+  port: ${MONGODB_PORT}
+  # Ensure MONGODB_BIND_IP is set to 0.0.0.0 in your .env file
+  bindIp: "${MONGODB_BIND_IP}"
+  maxIncomingConnections: ${MONGODB_MAX_CONNECTIONS}
+  compression:
+    compressors: "${MONGODB_COMPRESSION_COMPRESSORS}"
+
+# --- Security Settings ---
+security:
+  authorization: "${MONGODB_AUTHORIZATION}"

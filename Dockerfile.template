@@ -1,0 +1,24 @@
+FROM mongo:7.0
+RUN apt-get update -o Acquire::http::Pipeline="false" || apt-get update && \
+    apt-get install -y gettext-base procps util-linux gosu && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY mongod.conf /mongod.conf
+
+# CHANGE 1: Copy to /usr/local/bin instead of initdb.d
+COPY docker-entrypoint.sh /usr/local/bin/custom-entrypoint.sh
+
+# CHANGE 2: Fix permissions on the new path
+RUN chown mongodb:mongodb /usr/local/bin/custom-entrypoint.sh && \
+    chmod +x /usr/local/bin/custom-entrypoint.sh
+
+RUN mkdir -p /var/log/mongodb /etc/mongo && \
+    touch /var/log/mongodb/mongod.log && \
+    chown -R mongodb:mongodb /var/log/mongodb /etc/mongo
+
+HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=5 \
+  CMD mongosh --port ${MONGODB_PORT} --eval "db.hello()" || exit 1
+
+# CHANGE 3: Update Entrypoint to the new path
+ENTRYPOINT ["/usr/local/bin/custom-entrypoint.sh"]
+CMD ["mongod", "--config", "/etc/mongo/mongod.conf"]

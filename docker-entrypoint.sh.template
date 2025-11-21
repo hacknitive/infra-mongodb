@@ -1,0 +1,58 @@
+#!/bin/bash
+################################################################################
+# docker-entrypoint.sh - MongoDB Container Initialization Script
+################################################################################
+#
+# Description:
+#   Custom entrypoint for MongoDB Docker container that handles:
+#   1. Configuration file generation from template (environment variable substitution)
+#   2. File permission setup for security
+#   3. Delegation to official MongoDB entrypoint for user creation and startup
+#
+# Flow:
+#   1. Generate /etc/mongo/mongod.conf from /mongod.conf template
+#   2. Fix ownership and permissions for security
+#   3. Hand off to official docker-entrypoint.sh for MongoDB initialization
+#
+# Environment Variables:
+#   All environment variables are used in mongod.conf template substitution
+#   (see .env.example for complete list)
+#
+# Security:
+#   - Files are owned by mongodb user for unprivileged execution
+#   - Proper permissions prevent unauthorized access
+#
+################################################################################
+
+set -e
+
+# === Step 1: Generate Configuration File ===
+# Substitute environment variables in the template config file and output
+# the final configuration to /etc/mongo/mongod.conf where MongoDB can read it
+echo "[INFO] Generating MongoDB configuration from template..."
+envsubst < /mongod.conf > /etc/mongo/mongod.conf
+echo "[INFO] Configuration generated successfully"
+
+# === Step 2: Fix File Permissions ===
+# Ensure all configuration and data files are owned by the mongodb user
+# for secure unprivileged execution
+echo "[INFO] Setting up file permissions..."
+chown mongodb:mongodb /etc/mongo/mongod.conf
+chown -R mongodb:mongodb /data/db
+chown -R mongodb:mongodb /var/log/mongodb
+echo "[INFO] File permissions set successfully"
+
+# === Step 3: Delegate to Official Entrypoint ===
+# The official Docker entrypoint script handles:
+# - Creating the root user (from MONGO_INITDB_ROOT_USERNAME/PASSWORD)
+# - Running any initialization scripts
+# - Starting the mongod daemon
+#
+# We pass through all arguments to allow flexibility
+# (e.g., starting with custom MongoDB options)
+echo "[INFO] Delegating to official MongoDB entrypoint..."
+exec /usr/local/bin/docker-entrypoint.sh "$@"
+
+################################################################################
+# End of docker-entrypoint.sh
+################################################################################

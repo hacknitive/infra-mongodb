@@ -1,6 +1,0 @@
-# Ignore all files in this directory...
-*
-
-# ...except for .example files and this .gitignore file itself.
-!*.example
-!.gitignore

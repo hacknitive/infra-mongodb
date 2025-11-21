@@ -1,0 +1,249 @@
+################################################################################
+# docker-compose.yml - MongoDB Docker Compose Configuration
+################################################################################
+#
+# Description:
+#   Production-ready Docker Compose configuration for MongoDB 7.0 with
+#   optimization, security best practices, and comprehensive resource management.
+#   All configuration is externalized to .env file for flexibility and security.
+#
+# Features:
+#   - High-performance MongoDB 7.0 with WiredTiger engine
+#   - Security hardening with minimal container capabilities
+#   - Resource constraints and limits for stable operation
+#   - Health checks for container orchestration
+#   - Log rotation and persistence
+#   - Configurable compression and optimization settings
+#
+# Quick Start:
+#   1. Create .env file: cp .env.example .env
+#   2. Customize values in .env as needed
+#   3. Run host system tuning (see .gitlab-ci.yml.template documentation)
+#   4. Start services: docker compose up -d
+#   5. Monitor: docker compose logs -f mongodb
+#   6. Stop services: docker compose down
+#
+# Prerequisites:
+#   - Docker version 20.10 or higher
+#   - Docker Compose version 2.0 or higher
+#   - Linux host with sufficient system resources
+#   - For production: kernel parameter tuning for MongoDB
+#
+# Configuration Files:
+#   - .env: Environment variables (created from .env.example)
+#   - Dockerfile: Container image build configuration
+#   - mongod.conf: MongoDB server configuration template
+#   - docker-entrypoint.sh: Container initialization script
+#
+# Security Considerations:
+#   - Change default root credentials in .env before production deployment
+#   - Enable encryption at rest for sensitive data
+#   - Use host-based firewall to restrict MongoDB port access
+#   - Consider using a container network instead of host mode
+#   - Enable audit logging in production environments
+#
+# Performance Tuning:
+#   - WiredTiger cache size should be 25-50% of available RAM
+#   - Consider increasing MONGODB_MAX_CONNECTIONS for high-load scenarios
+#   - Journal commit interval affects durability vs. performance tradeoff
+#   - Compression reduces storage but increases CPU usage
+#
+# Troubleshooting:
+#   - Check logs: docker compose logs mongodb
+#   - Verify health: docker compose ps (look for healthy status)
+#   - Inspect config: docker exec <container> mongosh --eval 'db.hello()'
+#   - Check resources: docker stats
+#
+# References:
+#   - Environment Template: .env.example
+#   - CI/CD Pipeline: .gitlab-ci.yml.template
+#   - Official MongoDB Documentation: https://docs.mongodb.com/
+#
+################################################################################
+
+# === Services Definition ===
+# Define all containers to be managed by docker-compose
+services:
+  # === MongoDB Service ===
+  mongodb:
+    # === Build Configuration ===
+    # Build the Docker image from local Dockerfile with custom MongoDB setup
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    # === Container Naming ===
+    # Use a consistent name for easy reference and management
+    container_name: ${CONTAINER_NAME}
+    
+    # === Image Specification ===
+    # Built image name and tag for reference
+    image: ${CONTAINER_NAME}:latest
+    
+    # === Environment Configuration ===
+    # Load all environment variables from .env file for easy management
+    # This includes database credentials, resource limits, and optimizations
+    env_file:
+      - .env
+    
+    # === Port Mapping ===
+    # Expose MongoDB port from container to host
+    # Format: "host_port:container_port"
+    # Warning: Exposing to 0.0.0.0 allows external connections
+    ports:
+      - "${MONGODB_PORT}:${MONGODB_PORT}"
+    
+    # === Restart Policy ===
+    # Control how the container restarts after exit
+    # unless-stopped = restart unless explicitly stopped
+    restart: ${CONTAINER_RESTART_POLICY}
+    
+    # === Volume Mounts for Data Persistence ===
+    # Store data outside container for survival across restarts
+    volumes:
+      # Data volume: MongoDB database files and indexes
+      # Alternative: Use ./data:/data/db for local directory storage
+      - mongodb-data:/data/db
+      
+      # Logs volume: MongoDB log files
+      # Alternative: Use ./logs:/var/log/mongodb for local directory storage
+      - mongodb-logs:/var/log/mongodb
+    
+    # === Resource Constraints ===
+    # Limit resource usage to prevent container from consuming all host resources
+    
+    # CPU constraints
+    # cpus: Limit to specified number of CPU cores
+    cpus: '${MONGODB_CPUS}'
+    # cpuset: Assign specific CPU cores (e.g., 0-1 uses cores 0 and 1)
+    cpuset: '${MONGODB_CPUSET_CPUS}'
+    
+    # Memory constraints
+    # mem_limit: Hard memory limit (container killed if exceeded)
+    mem_limit: ${MONGODB_MEMORY}
+    # memswap_limit: Total memory + swap limit (should >= mem_limit)
+    memswap_limit: ${MONGODB_MEMORY_SWAP}
+    # mem_reservation: Soft memory limit (warning threshold)
+    mem_reservation: ${MONGODB_MEMORY_RESERVATION}
+    
+    # Process limits
+    # pids_limit: Maximum number of processes/threads allowed
+    pids_limit: ${MONGODB_PIDS_LIMIT}
+    
+    # === Logging Configuration ===
+    # Configure container log capture and rotation
+    logging:
+      # Use JSON file logging driver (default, supports log rotation)
+      driver: json-file
+      options:
+        # Rotate log file after reaching this size
+        max-size: ${MONGODB_LOG_MAX_SIZE}
+        # Keep maximum number of rotated log files
+        max-file: '${MONGODB_LOG_MAX_FILE}'
+    
+    # === Health Check Configuration ===
+    # Periodic health verification for orchestration and automated recovery
+    healthcheck:
+      # Health check command: test MongoDB connectivity
+      # Returns 0 for healthy, non-zero for unhealthy
+      test:
+        - CMD
+        - mongosh
+        - --port
+        - '${MONGODB_PORT}'
+        - --eval
+        - db.hello()  # Simple MongoDB connectivity test
+      
+      # Interval between health checks
+      interval: 30s
+      # Timeout for health check command to complete
+      timeout: 15s
+      # Number of consecutive failures before marking unhealthy
+      retries: 5
+      # Wait time after container starts before first health check
+      start_period: 10s
+    
+    # === System Resource Limits (ulimits) ===
+    # OS-level limits for file descriptors and processes
+    ulimits:
+      # File descriptors: max open files per process
+      # MongoDB requires many file handles for optimal performance
+      nofile:
+        soft: ${MONGODB_MAX_FILE_DESCRIPTORS}
+        hard: ${MONGODB_MAX_FILE_DESCRIPTORS}
+      # Process limit: max threads per process
+      nproc:
+        soft: ${MONGODB_MAX_PROCESSES}
+        hard: ${MONGODB_MAX_PROCESSES}
+    
+    # === Network Configuration ===
+    # Optional custom network for multi-container communication
+    # Uncomment to use custom bridge network instead of default
+    # networks:
+    #   - mongodb-network
+    
+    # === Security Settings ===
+    # Drop all Linux capabilities then add back only necessary ones
+    # This follows the principle of least privilege
+    cap_drop:
+      # Drop all capabilities by default
+      - ALL
+    cap_add:
+      # SETFCAP: Set file capabilities (required for some operations)
+      - SETFCAP
+      # CHOWN: Change file ownership (required for permission management)
+      - CHOWN
+      # DAC_OVERRIDE: Override file access controls (required for file access)
+      - DAC_OVERRIDE
+      # SETUID: Switch user ID (required for gosu privilege separation)
+      - SETUID
+      # SETGID: Switch group ID (required for gosu privilege separation)
+      - SETGID
+    
+    # === IPC Mode ===
+    # Use host IPC namespace for better performance
+    # Allows more efficient inter-process communication
+    ipc: host
+    
+    # === Important Notes ===
+    # Host-level sysctl tuning improves MongoDB performance on production systems
+    # Kernel parameters like vm.swappiness, fs.file-max, etc. should be optimized
+    # See MongoDB documentation and host kernel tuning guides for details
+    # Unsafe sysctls cannot be set in Docker Compose (kernel restriction)
+    # Configure these on the host system directly
+
+################################################################################
+# === Named Volumes Configuration ===
+# Define persistent volumes for data storage outside containers
+################################################################################
+volumes:
+  # MongoDB data volume
+  # Stores database files, collections, indexes
+  # Driver: local (stores on host machine)
+  mongodb-data:
+    driver: local
+  
+  # MongoDB logs volume
+  # Stores MongoDB log files for monitoring and debugging
+  # Driver: local (stores on host machine)
+  mongodb-logs:
+    driver: local
+
+################################################################################
+# === Custom Networks Configuration ===
+# Optional: Define custom bridge network for container communication
+# Uncomment to enable custom networking
+################################################################################
+# networks:
+#   # Custom bridge network for MongoDB
+#   mongodb-network:
+#     driver: bridge
+#     # IP address management configuration
+#     ipam:
+#       config:
+#         # Subnet for IP address allocation
+#         - subnet: 172.20.0.0/16
+
+################################################################################
+# End of docker-compose.yml
+################################################################################

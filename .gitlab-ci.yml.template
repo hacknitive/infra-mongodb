@@ -1,0 +1,292 @@
+################################################################################
+# .gitlab-ci.yml - GitLab CI/CD Pipeline for MongoDB Docker Deployment
+################################################################################
+#
+# Description:
+#   GitLab CI/CD pipeline configuration for automated MongoDB Docker image
+#   building and deployment to development and staging environments.
+#   Includes security hardening, health checks, and resource management.
+#
+# Features:
+#   - Automated Docker image build and deployment
+#   - Multi-environment support (development, staging)
+#   - Health check verification after deployment
+#   - Manual trigger for controlled deployments
+#   - Secure capability dropping and privilege separation
+#   - Comprehensive resource constraints and monitoring
+#
+# Pipeline Stages:
+#   1. build_and_deploy: Build Docker image and deploy to target environment
+#
+# Environments:
+#   - development: Continuous deployment environment (manual trigger)
+#   - staging: Pre-production environment (manual trigger)
+#
+# Prerequisites:
+#   - GitLab repository with Docker support
+#   - Environment-specific runners tagged: development-1, staging1
+#   - Environment variables or files set in GitLab CI/CD settings
+#   - .env file with MongoDB configuration in CI/CD variables or files
+#
+# Configuration:
+#   - Set $ENV_FILE_PATH environment variable pointing to .env file location
+#   - Ensure runners have Docker with compose support
+#   - Configure production/staging branch protection rules
+#
+# Triggers:
+#   - Development: Manually trigger on develop branch
+#   - Staging: Manually trigger on staging branch
+#   - Controlled deployment prevents accidental production changes
+#
+# References:
+#   - docker-compose.yml: Container orchestration
+#   - Dockerfile: Image build configuration
+#   - .env.example: Configuration template
+#   - MongoDB Documentation: https://docs.mongodb.com/
+#
+################################################################################
+
+# ============================================================
+# TEMPLATE DEFINITIONS
+# ============================================================
+# Reusable template for Docker health check verification
+# Used by deployment jobs to validate container readiness
+.docker_healthcheck: &docker_healthcheck
+    - |
+      # Display health check header
+      echo "────────────────────────────────────────────────────────────────"
+      echo "🔎 Starting Docker Healthcheck..."
+      echo "   - Container to check: '$HEALTHCHECK_CONTAINER_NAME'"
+      echo "────────────────────────────────────────────────────────────────"
+    - |
+      # Monitor container health status for up to 120 seconds
+      # Exit with success if healthy, failure if unhealthy or timeout
+      ELAPSED=0
+      while [ $ELAPSED -lt 120 ]; do
+        # Get current health status from Docker
+        STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$HEALTHCHECK_CONTAINER_NAME" || echo "starting")
+        echo "   - Health status: $STATUS (elapsed: ${ELAPSED}s)"
+        
+        # Container is healthy and ready for use
+        if [ "$STATUS" = "healthy" ]; then
+          echo "✅ Healthcheck passed. Container is healthy and ready."
+          docker ps -f name="^${HEALTHCHECK_CONTAINER_NAME}$"
+          exit 0
+        fi
+        
+        # Container reported unhealthy - show logs and fail
+        if [ "$STATUS" = "unhealthy" ]; then
+          echo "❌ Healthcheck failed. Container reported as unhealthy."
+          echo "Container logs:"
+          docker logs "$HEALTHCHECK_CONTAINER_NAME"
+          exit 1
+        fi
+        
+        # Wait before checking again
+        sleep 10
+        ELAPSED=$(($ELAPSED + 10))
+      done
+      
+      # Timeout: container still not healthy after 120 seconds
+      echo "❌ Healthcheck timed out after 120 seconds."
+      echo "Container logs:"
+      docker logs "$HEALTHCHECK_CONTAINER_NAME"
+      exit 1
+
+# ============================================================
+# PIPELINE VARIABLES
+# ============================================================
+variables:
+  # Docker registry image path
+  IMAGE_NAME: $CI_REGISTRY/$CI_PROJECT_PATH
+  # Image tag with commit SHA for version tracking
+  IMAGE_TAG: $IMAGE_NAME:$CI_COMMIT_SHORT_SHA
+  # Container name for identification
+  CONTAINER_NAME: "ai-pipeline-devops-crawler-mongodb"
+  # Container name to check health status
+  HEALTHCHECK_CONTAINER_NAME: $CONTAINER_NAME
+
+# ============================================================
+# PIPELINE STAGES
+# ============================================================
+stages:
+  # Single stage for building and deploying containers
+  - build_and_deploy
+
+# ============================================================
+# JOB: DEPLOY TO DEVELOPMENT ENVIRONMENT
+# ============================================================
+# Builds MongoDB Docker image and deploys to development environment
+# This is a manual trigger job for controlled deployments
+build_and_deploy_to_dev:
+  stage: build_and_deploy
+  # Tag for runner selection - must have docker:24.0
+  tags:
+    - development-1
+  # Docker image with CLI tools for this job
+  image: docker:24.0-cli
+  # Environment configuration
+  environment:
+    name: development
+  # Job trigger rules
+  rules:
+    # Only run on develop branch, requires manual trigger
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: manual
+      allow_failure: false
+  
+  # ===== Deployment Script =====
+  script:
+    # Step 1: Extract configuration from .env file
+    # Parse environment variables to pass to docker run
+    - export MONGODB_PORT=$(grep '^MONGODB_PORT=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_CPUS=$(grep '^MONGODB_CPUS=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_CPUSET_CPUS=$(grep '^MONGODB_CPUSET_CPUS=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MEMORY=$(grep '^MONGODB_MEMORY=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MEMORY_SWAP=$(grep '^MONGODB_MEMORY_SWAP=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MEMORY_RESERVATION=$(grep '^MONGODB_MEMORY_RESERVATION=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_BLKIO_WEIGHT=$(grep '^MONGODB_BLKIO_WEIGHT=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_PIDS_LIMIT=$(grep '^MONGODB_PIDS_LIMIT=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_LOG_MAX_SIZE=$(grep '^MONGODB_LOG_MAX_SIZE=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_LOG_MAX_FILE=$(grep '^MONGODB_LOG_MAX_FILE=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MAX_FILE_DESCRIPTORS=$(grep '^MONGODB_MAX_FILE_DESCRIPTORS=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MAX_PROCESSES=$(grep '^MONGODB_MAX_PROCESSES=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export CONTAINER_NAME=$(grep '^CONTAINER_NAME=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export CONTAINER_RESTART_POLICY=$(grep '^CONTAINER_RESTART_POLICY=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # Step 2: Build Docker image with tag
+    # --no-cache: Always build fresh image (no cache reuse)
+    - docker build --no-cache -t $IMAGE_TAG .
+    
+    # Step 3: Clean up old container instance (if exists)
+    - docker stop $CONTAINER_NAME || true
+    - docker rm $CONTAINER_NAME || true
+    
+    # Step 4: Start new MongoDB container with all configurations
+    # Security: Drops all capabilities, adds back only necessary ones
+    # Resources: Applies CPU, memory, and process limits from environment
+    - |
+      docker run -d \
+        --name $CONTAINER_NAME \
+        --restart $CONTAINER_RESTART_POLICY \
+        -p "$MONGODB_PORT:$MONGODB_PORT" \
+        --env-file $ENV_FILE_PATH \
+        -v "${CONTAINER_NAME}-data:/data/db" \
+        -v "${CONTAINER_NAME}-logs:/var/log/mongodb" \
+        --log-driver json-file \
+        --log-opt max-size=$MONGODB_LOG_MAX_SIZE \
+        --log-opt max-file=$MONGODB_LOG_MAX_FILE \
+        --cpus="$MONGODB_CPUS" \
+        --cpuset-cpus="$MONGODB_CPUSET_CPUS" \
+        --memory="$MONGODB_MEMORY" \
+        --memory-swap="$MONGODB_MEMORY_SWAP" \
+        --memory-reservation="$MONGODB_MEMORY_RESERVATION" \
+        --blkio-weight="$MONGODB_BLKIO_WEIGHT" \
+        --pids-limit="$MONGODB_PIDS_LIMIT" \
+        --ulimit nofile=$MONGODB_MAX_FILE_DESCRIPTORS:$MONGODB_MAX_FILE_DESCRIPTORS \
+        --ulimit nproc=$MONGODB_MAX_PROCESSES:$MONGODB_MAX_PROCESSES \
+        --ipc=host \
+        --cap-drop=ALL \
+        --cap-add=SETFCAP \
+        --cap-add=CHOWN \
+        --cap-add=DAC_OVERRIDE \
+        --cap-add=SETUID \
+        --cap-add=SETGID \
+        $IMAGE_TAG
+    
+    # Step 5: Verify container is healthy before finishing
+    - *docker_healthcheck
+
+# ============================================================
+# JOB: DEPLOY TO STAGING ENVIRONMENT
+# ============================================================
+# Builds MongoDB Docker image and deploys to staging environment
+# Similar to development, but uses staging network configuration
+build_and_deploy_to_staging:
+  stage: build_and_deploy
+  # Tag for runner selection - must have docker:24.0
+  tags:
+    - staging1
+  # Docker image with CLI tools for this job
+  image: docker:24.0-cli
+  # Environment configuration
+  environment:
+    name: staging
+  # Job trigger rules
+  rules:
+    # Only run on staging branch, requires manual trigger
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+      when: manual
+      allow_failure: false
+  
+  # ===== Deployment Script =====
+  script:
+    # Step 1: Extract configuration from .env file
+    # Parse environment variables to pass to docker run
+    - export MONGODB_PORT=$(grep '^MONGODB_PORT=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_CPUS=$(grep '^MONGODB_CPUS=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_CPUSET_CPUS=$(grep '^MONGODB_CPUSET_CPUS=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MEMORY=$(grep '^MONGODB_MEMORY=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MEMORY_SWAP=$(grep '^MONGODB_MEMORY_SWAP=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MEMORY_RESERVATION=$(grep '^MONGODB_MEMORY_RESERVATION=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_BLKIO_WEIGHT=$(grep '^MONGODB_BLKIO_WEIGHT=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_PIDS_LIMIT=$(grep '^MONGODB_PIDS_LIMIT=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_LOG_MAX_SIZE=$(grep '^MONGODB_LOG_MAX_SIZE=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_LOG_MAX_FILE=$(grep '^MONGODB_LOG_MAX_FILE=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MAX_FILE_DESCRIPTORS=$(grep '^MONGODB_MAX_FILE_DESCRIPTORS=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export MONGODB_MAX_PROCESSES=$(grep '^MONGODB_MAX_PROCESSES=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export CONTAINER_NAME=$(grep '^CONTAINER_NAME=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    - export CONTAINER_RESTART_POLICY=$(grep '^CONTAINER_RESTART_POLICY=' $ENV_FILE_PATH | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # Step 2: Build Docker image with tag
+    # --no-cache: Always build fresh image (no cache reuse)
+    - docker build --no-cache -t $IMAGE_TAG .
+    
+    # Step 3: Create staging network if it doesn't exist
+    # This network connects multiple staging services together
+    - docker network create docker-default-staging-network || true
+    
+    # Step 4: Clean up old container instance (if exists)
+    - docker stop $CONTAINER_NAME || true
+    - docker rm $CONTAINER_NAME || true
+    
+    # Step 5: Start new MongoDB container with staging network
+    # Same as development, but uses custom staging network for service communication
+    # Security: Drops all capabilities, adds back only necessary ones
+    # Resources: Applies CPU, memory, and process limits from environment
+    - |
+      docker run -d \
+        --name $CONTAINER_NAME \
+        --network docker-default-staging-network \
+        --restart $CONTAINER_RESTART_POLICY \
+        -p "$MONGODB_PORT:$MONGODB_PORT" \
+        --env-file $ENV_FILE_PATH \
+        -v "${CONTAINER_NAME}-data:/data/db" \
+        -v "${CONTAINER_NAME}-logs:/var/log/mongodb" \
+        --log-driver json-file \
+        --log-opt max-size=$MONGODB_LOG_MAX_SIZE \
+        --log-opt max-file=$MONGODB_LOG_MAX_FILE \
+        --cpus="$MONGODB_CPUS" \
+        --cpuset-cpus="$MONGODB_CPUSET_CPUS" \
+        --memory="$MONGODB_MEMORY" \
+        --memory-swap="$MONGODB_MEMORY_SWAP" \
+        --memory-reservation="$MONGODB_MEMORY_RESERVATION" \
+        --blkio-weight="$MONGODB_BLKIO_WEIGHT" \
+        --pids-limit="$MONGODB_PIDS_LIMIT" \
+        --ulimit nofile=$MONGODB_MAX_FILE_DESCRIPTORS:$MONGODB_MAX_FILE_DESCRIPTORS \
+        --ulimit nproc=$MONGODB_MAX_PROCESSES:$MONGODB_MAX_PROCESSES \
+        --ipc=host \
+        --cap-drop=ALL \
+        --cap-add=SETFCAP \
+        --cap-add=CHOWN \
+        --cap-add=DAC_OVERRIDE \
+        --cap-add=SETUID \
+        --cap-add=SETGID \
+        $IMAGE_TAG
+    
+    # Step 6: Verify container is healthy before finishing
+    - *docker_healthcheck
+
+################################################################################
+# End of .gitlab-ci.yml
+################################################################################

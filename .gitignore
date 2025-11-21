@@ -1,7 +1,8 @@
-.env
-.env*
-!.env.example
-.vscode/
+venv/
 docker-compose.yml
-automatic_git_status_add_commit_push.sh
+docker-entrypoint.sh
+Dockerfile
 mongod.conf
+automatic_git_status_add_commit_push.sh
+.env
+.gitlab-ci.yml
